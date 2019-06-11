@@ -18,8 +18,5 @@
     <ClCompile Include="ffmpeg_sdl.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="simplest_ffmpeg_player_su.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
   </ItemGroup>
 </Project>
