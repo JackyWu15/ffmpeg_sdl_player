@@ -305,11 +305,7 @@ void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt, const char 
 /************************************************************************/
 /* sdl播放器                                                               */
 /************************************************************************/
-int sdl_player() {
-	char *file_input  = (char *)malloc(64);
-		//strcpy(file_input, "Titanic.ts");
-		strcpy(file_input, "cuc_ieschool.ts");
-	
+int sdl_player(const char *file_input) {
 
 	av_register_all();
 
@@ -550,11 +546,10 @@ int sdl_player() {
 	return 0;
 }
 
-
 /************************************************************************/
 /* mp4转flv                                                                     */
 /************************************************************************/
-int remuxing() {
+int remuxing(const char *input,const char *output) {
 	int ret=0;
 	AVFormatContext *ifmt_ctx=NULL,* ofmt_ctx=NULL;
 	AVOutputFormat *ofmt = NULL;
@@ -566,10 +561,7 @@ int remuxing() {
 	AVStream *out_stream = NULL;
 
 
-	char *input = (char *)malloc(64);
-	char *output = (char *)malloc(64);
-	strcpy(input, "cuc_ieschool.mp4");
-	strcpy(output, "cuc_ieschool_remux.flv");
+	
 
 	av_register_all();
 
@@ -673,7 +665,7 @@ int remuxing() {
 		pkt.stream_index = stream_mapping[pkt.stream_index];
 		out_stream = ofmt_ctx->streams[pkt.stream_index];
 
-		//拷贝AVPacket
+		//拷贝AVPacket,转换pts和dts
 		pkt.pts = av_rescale_q_rnd(pkt.pts, in_stream->time_base, out_stream->time_base, (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
 		pkt.dts = av_rescale_q_rnd(pkt.dts, in_stream->time_base, out_stream->time_base, (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
 		pkt.duration = av_rescale_q(pkt.duration, in_stream->time_base, out_stream->time_base);
@@ -708,10 +700,181 @@ end:
 }
 
 
-int main(int argc,char *argv[]){
-	//sdl_player();
+/************************************************************************/
+/* 截取一段视频                                                                     */
+/************************************************************************/
+int cut_video(double begin_seconds, double end_seconds, const char *input, const char *output) {
 
-	remuxing();
+	int ret = 0;
+	AVFormatContext *ifmt_ctx = NULL, *ofmt_ctx = NULL;
+	AVOutputFormat *ofmt = NULL;
+
+
+	int stream_mapping_size = 0;
+	int *stream_mapping = 0;
+	int stream_index = 0;
+
+	int64_t *dts_start_from = NULL;
+	int64_t *pts_start_from = NULL;
+
+	int i = 0;
+
+	av_register_all();
+
+	ret = avformat_open_input(&ifmt_ctx, input, 0, 0);
+	if (ret != 0) {
+		printf("avformat_open_input failed %s \n", input);
+		ret = AVERROR(ENOMEM);
+		goto end;
+	} else {
+		dts_start_from = (int64_t *)malloc(sizeof(int64_t)*ifmt_ctx->nb_streams);
+		pts_start_from = (int64_t *)malloc(sizeof(int64_t)*ifmt_ctx->nb_streams);
+	}
+
+	ret = avformat_find_stream_info(ifmt_ctx, 0);
+	if (ret < 0) {
+		printf("avformat_find_stream_info failed %s \n", input);
+		ret = AVERROR(ENOMEM);
+		goto end;
+	}
+	av_dump_format(ifmt_ctx, 0, input, 0);
+
+
+	avformat_alloc_output_context2(&ofmt_ctx, NULL, NULL, output);
+	if (!ofmt_ctx) {
+		printf( "Could not create output context\n");
+		ret = AVERROR_UNKNOWN;
+		goto end;
+	}
+
+	ofmt = ofmt_ctx->oformat;
+	
+	for (i = 0; i < ifmt_ctx->nb_streams; i++) {
+		AVStream *in_stream = ifmt_ctx->streams[i];
+		AVStream *out_stream = avformat_new_stream(ofmt_ctx, NULL);
+		if (!out_stream) {
+			printf("avformat_new_stream failed \n");
+			ret = AVERROR(ENOMEM);
+			goto end;
+		}
+
+		ret = avcodec_parameters_copy(out_stream->codecpar, in_stream->codecpar);
+		if (ret < 0) {
+			printf("avcodec_parameters_copy failed\n");
+			ret = AVERROR(ENOMEM);
+			goto end;
+		}
+		ret = avcodec_copy_context(out_stream->codec, in_stream->codec);
+		if (ret < 0) {
+			printf("avcodec_copy_context failed\n");
+			ret = AVERROR(ENOMEM);
+			goto end;
+		}
+
+		out_stream->codec->codec_tag = 0;
+		if (ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER) {
+			out_stream->codec->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+		}
+	}
+
+	av_dump_format(ofmt_ctx, 0, output, 1);
+
+	if (!(ofmt->flags & AVFMT_NOFILE)) {
+		ret = avio_open(&ofmt_ctx->pb, output, AVIO_FLAG_WRITE);
+		if (ret < 0) {
+			printf("avio_open failed \ n");
+			ret = AVERROR(ENOMEM);
+			goto end;
+		}
+	}
+
+	ret = avformat_write_header(ofmt_ctx, NULL);
+	if (ret < 0) {
+		printf("avformat_write_header failed\n");
+		goto end;
+	}
+
+	//seek到指定位置
+	ret = av_seek_frame(ifmt_ctx, -1, begin_seconds*AV_TIME_BASE, AVSEEK_FLAG_ANY);
+	if (ret < 0) {
+		printf("av_seek_frame failed\n");
+		goto end;
+	}
+
+	memset(dts_start_from, 0, sizeof(int64_t) * ifmt_ctx->nb_streams);
+	memset(pts_start_from, 0, sizeof(int64_t) * ifmt_ctx->nb_streams);
+
+
+	AVPacket pkt;
+	while (1) {
+		AVStream *in_stream, *out_stream;
+
+		//读数据
+		ret = av_read_frame(ifmt_ctx, &pkt);
+		in_stream = ifmt_ctx->streams[pkt.stream_index];
+		out_stream = ofmt_ctx->streams[pkt.stream_index];
+
+		//超过截取时间，就结束读取
+		if (av_q2d(in_stream->time_base) * pkt.pts > end_seconds) {
+			av_free_packet(&pkt);
+			break;
+		}
+
+		if (dts_start_from[pkt.stream_index] == 0) {
+			dts_start_from[pkt.stream_index] = pkt.dts;
+		}
+
+		if (pts_start_from[pkt.stream_index] == 0) {
+			pts_start_from[pkt.stream_index] = pkt.pts;
+		}
+
+		pkt.pts = av_rescale_q_rnd(pkt.pts - pts_start_from[pkt.stream_index], in_stream->time_base, out_stream->time_base, (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+		pkt.dts = av_rescale_q_rnd(pkt.dts - dts_start_from[pkt.stream_index], in_stream->time_base, out_stream->time_base, (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+
+		if (pkt.pts < 0) {
+			pkt.pts = 0;
+		}
+		if (pkt.dts < 0) {
+			pkt.dts = 0;
+		}
+
+		pkt.duration = (int)av_rescale_q((int64_t)pkt.duration, in_stream->time_base, out_stream->time_base);
+		pkt.pos = -1;
+
+
+		//写数据
+		ret = av_interleaved_write_frame(ofmt_ctx, &pkt);
+		if (ret < 0) {
+			printf("av_interleaved_write_frame failed\n");
+			break;
+		}
+		av_free_packet(&pkt);
+	}
+
+	free(dts_start_from);
+	free(pts_start_from);
+
+	av_write_trailer(ofmt_ctx);
+end:
+	avformat_close_input(&ifmt_ctx);
+
+	/* close output */
+	if (ofmt_ctx && !(ofmt->flags & AVFMT_NOFILE))
+		avio_closep(&ofmt_ctx->pb);
+	avformat_free_context(ofmt_ctx);
+
+	if (ret < 0 && ret != AVERROR_EOF) {
+		//fprintf(stderr, "Error occurred: %s\n", av_err2str(ret));
+		return 1;
+	}
+	return 0;
+}
+int main(int argc,char *argv[]){
+	//sdl_player("cuc_ieschool.mp4");
+
+	//remuxing("cuc_ieschool.mp4", "cuc_ieschool_remux.flv");
+
+	cut_video(3, 15, "cuc_ieschool.mp4", "cuc_ieschool_cut.mp4");
 
 	return 0;
 }
