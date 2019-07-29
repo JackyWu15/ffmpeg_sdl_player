@@ -11,6 +11,8 @@ extern "C" {
 #include "libswscale/swscale.h"
 #include "libavutil/log.h"
 #include "libavutil/timestamp.h"
+#include "libavutil/opt.h"
+#include "libavutil/imgutils.h"
 }
 
 #ifndef AV_WB32
@@ -253,6 +255,9 @@ fail:
 	return ret;
 }
 
+
+
+
 #define REFRESH_VIDEO (SDL_USEREVENT+1)
 #define BREAK_EVENT (SDL_USEREVENT+2)
 
@@ -391,7 +396,7 @@ int sdl_player(const char *file_input) {
 	//一帧缓存大小
 	uint8_t *out_buffer = (uint8_t *)av_malloc(avpicture_get_size(AV_PIX_FMT_YUV420P, avcodecContext->width, avcodecContext->height));
 
-	avpicture_fill((AVPicture*)avframeYUV, out_buffer, AV_PIX_FMT_YUV420P, avcodecContext->width, avcodecContext->height),
+	avpicture_fill((AVPicture*)avframeYUV, out_buffer, AV_PIX_FMT_YUV420P, avcodecContext->width, avcodecContext->height);
 
 		avpacket = (AVPacket *)av_malloc(sizeof(AVPacket));
 
@@ -427,6 +432,8 @@ int sdl_player(const char *file_input) {
 	//创建渲染器
 	SDL_Renderer *renderer = SDL_CreateRenderer(screen, -1, 0);
 
+	SDL_RenderClear(renderer);
+
 	//YUV排列方式
 	Uint32 pixformat = SDL_PIXELFORMAT_IYUV;
 
@@ -440,7 +447,7 @@ int sdl_player(const char *file_input) {
 	unsigned char *buffer = (unsigned char *)malloc(pix_picture);
 
 	//开启子线程
-	SDL_Thread *refresh_thread = SDL_CreateThread(refresh_video, NULL, NULL);
+	SDL_CreateThread(refresh_video, NULL, NULL);
 	SDL_Event event;
 
 	//解封装
@@ -547,7 +554,7 @@ int sdl_player(const char *file_input) {
 }
 
 /************************************************************************/
-/* mp4转flv                                                                     */
+/* mp4转flv                                                              */
 /************************************************************************/
 int remuxing(const char *input,const char *output) {
 	int ret=0;
@@ -701,7 +708,7 @@ end:
 
 
 /************************************************************************/
-/* 截取一段视频                                                                     */
+/* 截取一段视频                                                          */
 /************************************************************************/
 int cut_video(double begin_seconds, double end_seconds, const char *input, const char *output) {
 
@@ -869,12 +876,691 @@ end:
 	}
 	return 0;
 }
-int main(int argc,char *argv[]){
-	//sdl_player("cuc_ieschool.mp4");
+
+
+/************************************************************************/
+/* yuv编码.h264														  */
+/************************************************************************/
+
+int encode_video(const char *input,const char *output) {
+	const char *filename, *codec_name;
+	const AVCodec *codec;
+	AVCodecContext *c = NULL;
+	int i, ret, x, y, got_output;
+	FILE *f;
+	AVFrame *frame;
+	AVPacket pkt;
+	uint8_t endcode[] = { 0, 0, 1, 0xb7 };
+
+	filename = input;
+	codec_name = output;
+
+	//只需注册编解码器
+	avcodec_register_all();
+
+	//根据编解码器名字找到编解码器
+	codec = avcodec_find_encoder_by_name(codec_name);
+	if (!codec) {
+		fprintf(stderr, "Codec not found\n");
+		exit(1);
+	}
+	//创建编解码器上下文
+	c = avcodec_alloc_context3(codec);
+	if (!c) {
+		fprintf(stderr, "Could not allocate video codec context\n");
+		exit(1);
+	}
+
+	//码率
+	c->bit_rate = 400000;
+
+	//分辨率
+	c->width = 320;
+	c->height = 480;
+
+	//时间基
+	c->time_base = AVRational{ 1, 25 };
+
+	//帧率
+	c->framerate = AVRational{ 25, 1 };
+
+	//组帧，也即每10帧一个关键帧
+	c->gop_size = 10;
+	//b帧数量
+	c->max_b_frames = 1;
+	//yuv格式
+	c->pix_fmt = AV_PIX_FMT_YUV420P;
+
+
+	//如果编解码器是h264,设置预压缩为慢速，提高压缩质量,格式有ultrafast、superfast、veryfast、faster、fast、medium、slow、slower、veryslow、placebo，
+	if (codec->id == AV_CODEC_ID_H264)
+		av_opt_set(c->priv_data, "preset", "slow", 0);
+
+	//打开编码器
+	if (avcodec_open2(c, codec, NULL) < 0) {
+		fprintf(stderr, "Could not open codec\n");
+		exit(1);
+	}
+
+
+	f = fopen(filename, "wb");
+	if (!f) {
+		fprintf(stderr, "Could not open %s\n", filename);
+		exit(1);
+	}
+
+	frame = av_frame_alloc();
+	if (!frame) {
+		fprintf(stderr, "Could not allocate video frame\n");
+		exit(1);
+	}
+	frame->format = c->pix_fmt;
+	frame->width = c->width;
+	frame->height = c->height;
+
+	ret = av_frame_get_buffer(frame, 32);
+	if (ret < 0) {
+		fprintf(stderr, "Could not allocate the video frame data\n");
+		exit(1);
+	}
+
+	/* encode 1 second of video */
+	for (i = 0; i < 25; i++) {
+		av_init_packet(&pkt);
+		pkt.data = NULL;    // packet data will be allocated by the encoder
+		pkt.size = 0;
+
+		fflush(stdout);
+
+		/* make sure the frame data is writable */
+		ret = av_frame_make_writable(frame);
+		if (ret < 0)
+			exit(1);
+
+		/* prepare a dummy image */
+		/* Y */
+		for (y = 0; y < c->height; y++) {
+			for (x = 0; x < c->width; x++) {
+				frame->data[0][y * frame->linesize[0] + x] = x + y + i * 3;
+			}
+		}
+
+		/* Cb and Cr */
+		for (y = 0; y < c->height / 2; y++) {
+			for (x = 0; x < c->width / 2; x++) {
+				frame->data[1][y * frame->linesize[1] + x] = 128 + y + i * 2;
+				frame->data[2][y * frame->linesize[2] + x] = 64 + x + i * 5;
+			}
+		}
+
+		frame->pts = i;
+
+		/* encode the image */
+		ret = avcodec_encode_video2(c, &pkt, frame, &got_output);
+		if (ret < 0) {
+			fprintf(stderr, "Error encoding frame\n");
+			exit(1);
+		}
+
+		if (got_output) {
+			printf("Write frame %3d (size=%5d)\n", i, pkt.size);
+			fwrite(pkt.data, 1, pkt.size, f);
+			av_packet_unref(&pkt);
+		}
+		printf("..................%d\n", got_output);
+	}
+
+	//编码器中会缓存一些数据，要重新取出，上面设定的编码速度越慢，编码器中缓存的Packet也会越多
+	for (got_output = 1; got_output; i++) {
+		
+		fflush(stdout);
+
+		ret = avcodec_encode_video2(c, &pkt, NULL, &got_output);
+		if (ret < 0) {
+			fprintf(stderr, "Error encoding frame\n");
+			exit(1);
+		}
+
+		if (got_output) {
+			printf("Write frame %3d (size=%5d)\n", i, pkt.size);
+			fwrite(pkt.data, 1, pkt.size, f);
+			av_packet_unref(&pkt);
+		}
+
+		printf(">>>>>>>>>>>>>>>>>>>>%d\n", got_output);
+	}
+
+	/* add sequence end code to have a real MPEG file */
+	fwrite(endcode, 1, sizeof(endcode), f);
+	fclose(f);
+
+	avcodec_free_context(&c);
+	av_frame_free(&frame);
+}
+
+
+
+
+#define INBUF_SIZE 4096
+
+#define WORD uint16_t
+#define DWORD uint32_t
+#define LONG int32_t
+
+#pragma pack(2)
+typedef struct tagBITMAPFILEHEADER {
+	WORD  bfType;
+	DWORD bfSize;
+	WORD  bfReserved1;
+	WORD  bfReserved2;
+	DWORD bfOffBits;
+} BITMAPFILEHEADER, *PBITMAPFILEHEADER;
+
+
+typedef struct tagBITMAPINFOHEADER {
+	DWORD biSize;
+	LONG  biWidth;
+	LONG  biHeight;
+	WORD  biPlanes;
+	WORD  biBitCount;
+	DWORD biCompression;
+	DWORD biSizeImage;
+	LONG  biXPelsPerMeter;
+	LONG  biYPelsPerMeter;
+	DWORD biClrUsed;
+	DWORD biClrImportant;
+} BITMAPINFOHEADER, *PBITMAPINFOHEADER;
+
+void saveBMP(struct SwsContext *img_convert_ctx, AVFrame *frame, char *filename) {
+	//1 先进行转换,  YUV420=>RGB24:
+	int w = frame->width;
+	int h = frame->height;
+
+
+	int numBytes = avpicture_get_size(AV_PIX_FMT_BGR24, w, h);
+	uint8_t *buffer = (uint8_t *)av_malloc(numBytes * sizeof(uint8_t));
+
+
+	AVFrame *pFrameRGB = av_frame_alloc();
+	/* buffer is going to be written to rawvideo file, no alignment */
+   /*
+   if (av_image_alloc(pFrameRGB->data, pFrameRGB->linesize,
+							 w, h, AV_PIX_FMT_BGR24, pix_fmt, 1) < 0) {
+	   fprintf(stderr, "Could not allocate destination image\n");
+	   exit(1);
+   }
+   */
+	avpicture_fill((AVPicture *)pFrameRGB, buffer, AV_PIX_FMT_BGR24, w, h);
+
+	sws_scale(img_convert_ctx, frame->data, frame->linesize,
+		0, h, pFrameRGB->data, pFrameRGB->linesize);
+
+	//2 构造 BITMAPINFOHEADER
+	BITMAPINFOHEADER header;
+	header.biSize = sizeof(BITMAPINFOHEADER);
+
+
+	header.biWidth = w;
+	header.biHeight = h * (-1);
+	header.biBitCount = 24;
+	header.biCompression = 0;
+	header.biSizeImage = 0;
+	header.biClrImportant = 0;
+	header.biClrUsed = 0;
+	header.biXPelsPerMeter = 0;
+	header.biYPelsPerMeter = 0;
+	header.biPlanes = 1;
+
+	//3 构造文件头
+	BITMAPFILEHEADER bmpFileHeader = { 0, };
+	//HANDLE hFile = NULL;
+	DWORD dwTotalWriten = 0;
+	DWORD dwWriten;
+
+	bmpFileHeader.bfType = 0x4d42; //'BM';
+	bmpFileHeader.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + numBytes;
+	bmpFileHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+
+	FILE* pf = fopen(filename, "wb");
+	fwrite(&bmpFileHeader, sizeof(BITMAPFILEHEADER), 1, pf);
+	fwrite(&header, sizeof(BITMAPINFOHEADER), 1, pf);
+	fwrite(pFrameRGB->data[0], 1, numBytes, pf);
+	fclose(pf);
+
+
+	//释放资源
+	//av_free(buffer);
+	av_freep(&pFrameRGB[0]);
+	av_free(pFrameRGB);
+}
+
+static void pgm_save(unsigned char *buf, int wrap, int xsize, int ysize,char *filename) {
+	FILE *f;
+	int i;
+
+	f = fopen(filename, "w");
+	fprintf(f, "P5\n%d %d\n%d\n", xsize, ysize, 255);
+	for (i = 0; i < ysize; i++)
+		fwrite(buf + i * wrap, 1, xsize, f);
+	fclose(f);
+}
+
+static int decode_write_frame(const char *outfilename, AVCodecContext *avctx,struct SwsContext *img_convert_ctx, AVFrame *frame, int *frame_count, AVPacket *pkt, int last) {
+	int len, got_frame;
+	char buf[1024];
+
+	len = avcodec_decode_video2(avctx, frame, &got_frame, pkt);
+	if (len < 0) {
+		fprintf(stderr, "Error while decoding frame %d\n", *frame_count);
+		return len;
+	}
+	if (got_frame) {
+		printf("Saving %sframe %3d\n", last ? "last " : "", *frame_count);
+		fflush(stdout);
+
+		/* the picture is allocated by the decoder, no need to free it */
+		snprintf(buf, sizeof(buf), "%s-%d.bmp", outfilename, *frame_count);
+
+		/*
+		pgm_save(frame->data[0], frame->linesize[0],
+				 frame->width, frame->height, buf);
+		*/
+
+		saveBMP(img_convert_ctx, frame, buf);
+
+		(*frame_count)++;
+	}
+	if (pkt->data) {
+		pkt->size -= len;
+		pkt->data += len;
+	}
+	return 0;
+}
+
+
+/************************************************************************/
+/* 视频转图片														  */
+/************************************************************************/
+
+int decode_video(const char *input, const char *output) {
+	int ret;
+
+	FILE *f;
+
+	const char *filename, *outfilename;
+
+	AVFormatContext *fmt_ctx = NULL;
+
+	const AVCodec *codec;
+	AVCodecContext *c = NULL;
+
+	AVStream *st = NULL;
+	int stream_index;
+
+	int frame_count;
+	AVFrame *frame;
+
+	struct SwsContext *img_convert_ctx;
+
+	//uint8_t inbuf[INBUF_SIZE + AV_INPUT_BUFFER_PADDING_SIZE];
+	AVPacket avpkt;
+
+	filename = input;
+	outfilename = output;
+
+	/* register all formats and codecs */
+	av_register_all();
+
+	/* open input file, and allocate format context */
+	if (avformat_open_input(&fmt_ctx, filename, NULL, NULL) < 0) {
+		fprintf(stderr, "Could not open source file %s\n", filename);
+		exit(1);
+	}
+
+	/* retrieve stream information */
+	if (avformat_find_stream_info(fmt_ctx, NULL) < 0) {
+		fprintf(stderr, "Could not find stream information\n");
+		exit(1);
+	}
+
+	/* dump input information to stderr */
+	av_dump_format(fmt_ctx, 0, filename, 0);
+
+	av_init_packet(&avpkt);
+
+	/* set end of buffer to 0 (this ensures that no overreading happens for damaged MPEG streams) */
+	//memset(inbuf + INBUF_SIZE, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+	//
+
+	ret = av_find_best_stream(fmt_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
+	if (ret < 0) {
+		fprintf(stderr, "Could not find %s stream in input file '%s'\n",
+			av_get_media_type_string(AVMEDIA_TYPE_VIDEO), filename);
+		return ret;
+	}
+
+	stream_index = ret;
+	st = fmt_ctx->streams[stream_index];
+
+	/* find decoder for the stream */
+	codec = avcodec_find_decoder(st->codecpar->codec_id);
+	if (!codec) {
+		fprintf(stderr, "Failed to find %s codec\n",
+			av_get_media_type_string(AVMEDIA_TYPE_VIDEO));
+		return AVERROR(EINVAL);
+	}
+
+
+	/* find the MPEG-1 video decoder */
+	/*
+	codec = avcodec_find_decoder(AV_CODEC_ID_MPEG1VIDEO);
+	if (!codec) {
+		fprintf(stderr, "Codec not found\n");
+		exit(1);
+	}
+	*/
+
+	c = avcodec_alloc_context3(NULL);
+	if (!c) {
+		fprintf(stderr, "Could not allocate video codec context\n");
+		exit(1);
+	}
+
+	/* Copy codec parameters from input stream to output codec context */
+	if ((ret = avcodec_parameters_to_context(c, st->codecpar)) < 0) {
+		fprintf(stderr, "Failed to copy %s codec parameters to decoder context\n",
+			av_get_media_type_string(AVMEDIA_TYPE_VIDEO));
+		return ret;
+	}
+
+
+	/*
+	if (codec->capabilities & AV_CODEC_CAP_TRUNCATED)
+		c->flags |= AV_CODEC_FLAG_TRUNCATED; // we do not send complete frames
+	*/
+
+	/* For some codecs, such as msmpeg4 and mpeg4, width and height
+	   MUST be initialized there because this information is not
+	   available in the bitstream. */
+
+	   /* open it */
+	if (avcodec_open2(c, codec, NULL) < 0) {
+		fprintf(stderr, "Could not open codec\n");
+		exit(1);
+	}
+
+	/*
+	f = fopen(filename, "rb");
+	if (!f) {
+		fprintf(stderr, "Could not open %s\n", filename);
+		exit(1);
+	}
+	*/
+
+	img_convert_ctx = sws_getContext(c->width, c->height,
+		c->pix_fmt,
+		c->width, c->height,
+		AV_PIX_FMT_RGB24,
+		SWS_BICUBIC, NULL, NULL, NULL);
+
+	if (img_convert_ctx == NULL) {
+		fprintf(stderr, "Cannot initialize the conversion context\n");
+		exit(1);
+	}
+
+	frame = av_frame_alloc();
+	if (!frame) {
+		fprintf(stderr, "Could not allocate video frame\n");
+		exit(1);
+	}
+
+	frame_count = 0;
+	while (av_read_frame(fmt_ctx, &avpkt) >= 0) {
+		/*
+		avpkt.size = fread(inbuf, 1, INBUF_SIZE, f);
+		if (avpkt.size == 0)
+			break;
+		*/
+
+		/* NOTE1: some codecs are stream based (mpegvideo, mpegaudio)
+		   and this is the only method to use them because you cannot
+		   know the compressed data size before analysing it.
+
+		   BUT some other codecs (msmpeg4, mpeg4) are inherently frame
+		   based, so you must call them with all the data for one
+		   frame exactly. You must also initialize 'width' and
+		   'height' before initializing them. */
+
+		   /* NOTE2: some codecs allow the raw parameters (frame size,
+			  sample rate) to be changed at any frame. We handle this, so
+			  you should also take care of it */
+
+			  /* here, we use a stream based decoder (mpeg1video), so we
+				 feed decoder and see if it could decode a frame */
+				 //avpkt.data = inbuf;
+				 //while (avpkt.size > 0)
+		if (avpkt.stream_index == stream_index) {
+			if (decode_write_frame(outfilename, c, img_convert_ctx, frame, &frame_count, &avpkt, 0) < 0)
+				exit(1);
+		}
+
+		av_packet_unref(&avpkt);
+	}
+
+	/* Some codecs, such as MPEG, transmit the I- and P-frame with a
+	   latency of one frame. You must do the following to have a
+	   chance to get the last frame of the video. */
+	avpkt.data = NULL;
+	avpkt.size = 0;
+	decode_write_frame(outfilename, c, img_convert_ctx, frame, &frame_count, &avpkt, 1);
+
+	fclose(f);
+
+	avformat_close_input(&fmt_ctx);
+
+	sws_freeContext(img_convert_ctx);
+	avcodec_free_context(&c);
+	av_frame_free(&frame);
+}
+
+
+
+
+
+static int check_sample_fmt(const AVCodec *codec, enum AVSampleFormat sample_fmt) {
+	const enum AVSampleFormat *p = codec->sample_fmts;
+
+	while (*p != AV_SAMPLE_FMT_NONE) {
+		if (*p == sample_fmt)
+			return 1;
+		p++;
+	}
+	return 0;
+}
+
+/* just pick the highest supported samplerate */
+static int select_sample_rate(const AVCodec *codec) {
+	const int *p;
+	int best_samplerate = 0;
+
+	if (!codec->supported_samplerates)
+		return 44100;
+
+	p = codec->supported_samplerates;
+	while (*p) {
+		if (!best_samplerate || abs(44100 - *p) < abs(44100 - best_samplerate))
+			best_samplerate = *p;
+		p++;
+	}
+	return best_samplerate;
+}
+
+/* select layout with the highest channel count */
+static int select_channel_layout(const AVCodec *codec) {
+	const uint64_t *p;
+	uint64_t best_ch_layout = 0;
+	int best_nb_channels = 0;
+
+	if (!codec->channel_layouts)
+		return AV_CH_LAYOUT_STEREO;
+
+	p = codec->channel_layouts;
+	while (*p) {
+		int nb_channels = av_get_channel_layout_nb_channels(*p);
+
+		if (nb_channels > best_nb_channels) {
+			best_ch_layout = *p;
+			best_nb_channels = nb_channels;
+		}
+		p++;
+	}
+	return best_ch_layout;
+}
+
+/************************************************************************/
+/* 编码AAC													  */
+/************************************************************************/
+
+int encode_audio(const char *output) {
+	const char *filename;
+	const AVCodec *codec;
+	AVCodecContext *c = NULL;
+	AVFrame *frame;
+	AVPacket pkt;
+	int i, j, k, ret, got_output;
+	FILE *f;
+	uint16_t *samples;
+	float t, tincr;
+
+	filename = output;
+
+	/* register all the codecs */
+	avcodec_register_all();
+
+	/* find the MP2 encoder */
+	codec = avcodec_find_encoder(AV_CODEC_ID_MP2);
+	if (!codec) {
+		fprintf(stderr, "Codec not found\n");
+		exit(1);
+	}
+
+	c = avcodec_alloc_context3(codec);
+	if (!c) {
+		fprintf(stderr, "Could not allocate audio codec context\n");
+		exit(1);
+	}
+
+	/* put sample parameters */
+	c->bit_rate = 64000;
+
+	/* check that the encoder supports s16 pcm input */
+	c->sample_fmt = AV_SAMPLE_FMT_S16;
+	if (!check_sample_fmt(codec, c->sample_fmt)) {
+		fprintf(stderr, "Encoder does not support sample format %s",
+			av_get_sample_fmt_name(c->sample_fmt));
+		exit(1);
+	}
+
+	/* select other audio parameters supported by the encoder */
+	c->sample_rate = select_sample_rate(codec);
+	c->channel_layout = select_channel_layout(codec);
+	c->channels = av_get_channel_layout_nb_channels(c->channel_layout);
+
+	/* open it */
+	if (avcodec_open2(c, codec, NULL) < 0) {
+		fprintf(stderr, "Could not open codec\n");
+		exit(1);
+	}
+
+	f = fopen(filename, "wb");
+	if (!f) {
+		fprintf(stderr, "Could not open %s\n", filename);
+		exit(1);
+	}
+
+	/* frame containing input raw audio */
+	frame = av_frame_alloc();
+	if (!frame) {
+		fprintf(stderr, "Could not allocate audio frame\n");
+		exit(1);
+	}
+
+	frame->nb_samples = c->frame_size;
+	frame->format = c->sample_fmt;
+	frame->channel_layout = c->channel_layout;
+
+	/* allocate the data buffers */
+	ret = av_frame_get_buffer(frame, 0);
+	if (ret < 0) {
+		fprintf(stderr, "Could not allocate audio data buffers\n");
+		exit(1);
+	}
+
+	/* encode a single tone sound */
+	t = 0;
+	tincr = 2 * M_PI * 440.0 / c->sample_rate;
+	for (i = 0; i < 200; i++) {
+		av_init_packet(&pkt);
+		pkt.data = NULL; // packet data will be allocated by the encoder
+		pkt.size = 0;
+
+		/* make sure the frame is writable -- makes a copy if the encoder
+		 * kept a reference internally */
+		ret = av_frame_make_writable(frame);
+		if (ret < 0)
+			exit(1);
+		samples = (uint16_t*)frame->data[0];
+
+		for (j = 0; j < c->frame_size; j++) {
+			samples[2 * j] = (int)(sin(t) * 10000);
+
+			for (k = 1; k < c->channels; k++)
+				samples[2 * j + k] = samples[2 * j];
+			t += tincr;
+		}
+		/* encode the samples */
+		ret = avcodec_encode_audio2(c, &pkt, frame, &got_output);
+		if (ret < 0) {
+			fprintf(stderr, "Error encoding audio frame\n");
+			exit(1);
+		}
+		if (got_output) {
+			fwrite(pkt.data, 1, pkt.size, f);
+			av_packet_unref(&pkt);
+		}
+	}
+
+	/* get the delayed frames */
+	for (got_output = 1; got_output; i++) {
+		ret = avcodec_encode_audio2(c, &pkt, NULL, &got_output);
+		if (ret < 0) {
+			fprintf(stderr, "Error encoding frame\n");
+			exit(1);
+		}
+
+		if (got_output) {
+			fwrite(pkt.data, 1, pkt.size, f);
+			av_packet_unref(&pkt);
+		}
+	}
+	fclose(f);
+
+	av_frame_free(&frame);
+	avcodec_free_context(&c);
+}
+
+int main1(int argc,char *argv[]){
+	sdl_player("cuc_ieschool.mp4");
 
 	//remuxing("cuc_ieschool.mp4", "cuc_ieschool_remux.flv");
 
-	cut_video(3, 15, "cuc_ieschool.mp4", "cuc_ieschool_cut.mp4");
+	//cut_video(3, 15, "cuc_ieschool.mp4", "cuc_ieschool_cut.mp4");
+
+	//encode_video("1.h264", "libx264");
+
+	//decode_video("cuc_ieschool.mp4", "./");
+
+	//encode_audio("1.aac");
 
 	return 0;
 }

@@ -15,8 +15,49 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="AVAudio.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="AVPacketQueue.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="AVVideo.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ffmpeg_player_main.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="ffmpeg_sdl.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="MediaPlayer.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="AVFrameQueue.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="AVVideoDisplay.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="AVAudio.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="AVPacketQueue.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="AVVideo.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="MediaPlayer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="AVFrameQueue.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="AVVideoDisplay.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

@@ -77,13 +77,15 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <SDLCheck>true</SDLCheck>
+      <SDLCheck>false</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>G:\media\project_demo\vs\ffmpeg_sdl_player\ffmpeg_sdl_player\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>G:\media\project_demo\vs\ffmpeg_sdl_player\ffmpeg_sdl_player\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;postproc.lib;swresample.lib;swscale.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <EntryPointSymbol>
+      </EntryPointSymbol>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -106,7 +108,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <SDLCheck>true</SDLCheck>
+      <SDLCheck>false</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>G:\media\project_demo\vs\ffmpeg_sdl_player\ffmpeg_sdl_player\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -115,6 +117,8 @@
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalLibraryDirectories>G:\media\project_demo\vs\ffmpeg_sdl_player\ffmpeg_sdl_player\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;postproc.lib;swresample.lib;swscale.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <EntryPointSymbol>
+      </EntryPointSymbol>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -136,7 +140,22 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="AVAudio.cpp" />
+    <ClCompile Include="AVFrameQueue.cpp" />
+    <ClCompile Include="AVPacketQueue.cpp" />
+    <ClCompile Include="AVVideo.cpp" />
+    <ClCompile Include="AVVideoDisplay.cpp" />
+    <ClCompile Include="ffmpeg_player_main.cpp" />
     <ClCompile Include="ffmpeg_sdl.cpp" />
+    <ClCompile Include="MediaPlayer.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="AVAudio.h" />
+    <ClInclude Include="AVFrameQueue.h" />
+    <ClInclude Include="AVPacketQueue.h" />
+    <ClInclude Include="AVVideo.h" />
+    <ClInclude Include="AVVideoDisplay.h" />
+    <ClInclude Include="MediaPlayer.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
