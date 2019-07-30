@@ -21,7 +21,10 @@ void sdl_refresh(void *user_data) {
 			video->videoFrameQueue.popAVFrame(&video->bufferFrame);
 
 			double current_pts = *(double *)video->bufferFrame->opaque;
+			//上一帧结束到当前帧间结束延迟的时间
 			double delay = current_pts - video->frame_last_pts;
+
+			//太快或太慢都重置为上一帧的延迟时间
 			if (delay <= 0 || delay >= 1.0) {
 				delay = video->frame_last_delay;
 			}
@@ -30,22 +33,25 @@ void sdl_refresh(void *user_data) {
 
 			video->frame_last_pts = current_pts;
 
+			//音频当前播放的时间
 			double ref_clock = mediaPlayer->audio->get_audio_clock();
-
+			//音频和视频差值
 			double diff = current_pts - ref_clock;
-
+			//最小同步时间
 			double threshold = (delay > SYNC_THRESHOLD) ? delay : SYNC_THRESHOLD;
 
 
 			if (fabs(diff) < NOSYNC_THRESHOLD) // 不同步
 			{
-				if (diff <= -threshold) // 慢了，delay设为0
+				if (diff <= -threshold) { // 慢了
 					delay = 0;
-				else if (diff >= threshold) // 快了，加倍delay
+				} else if (diff >= threshold) { // 快了
 					delay *= 2;
+				}
 			}
 
 			video->frame_timer += delay;
+			//实际延迟时间
 			double actual_delay = video->frame_timer - static_cast<double>(av_gettime()) / 1000000.0;
 			if (actual_delay <= 0.010)
 				actual_delay = 0.010;

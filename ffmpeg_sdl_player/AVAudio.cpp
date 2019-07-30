@@ -167,12 +167,11 @@ int audio_decode_frame(AVAudio * audio, uint8_t * audio_buf, int buf_size) {
 }
 
 
-//获取当前音频的pts,用于视频同步
+//获取当前音频pts，有可能缓存中还有残留的数据没播放，需剔除
 double AVAudio::get_audio_clock() {
-	int hw_buf_size = audio_buff_size - audio_buff_offset;
-	int bytes_per_sec = audioStream->codec->sample_rate * audioCodecCtx->channels * 2;
+	double left_size_pts = static_cast<double>(audio_buff_size - audio_buff_offset)/(audioStream->codec->sample_rate * audioCodecCtx->channels * 2);
 
-	double pts = audio_duration - static_cast<double>(hw_buf_size) / bytes_per_sec;
+	double pts = audio_duration - left_size_pts;
 
 	return pts;
 }
