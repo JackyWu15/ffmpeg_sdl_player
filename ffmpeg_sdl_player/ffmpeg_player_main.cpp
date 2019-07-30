@@ -49,7 +49,8 @@ int main(int arv, char *argv[]) {
 	AVStream *audioStream = mediaPlayer.pFormatCtx->streams[mediaPlayer.audio->stream_index];
 	AVStream *videoStream = mediaPlayer.pFormatCtx->streams[mediaPlayer.video->stream_index];
 
-	int audio_duration = audioStream->duration*av_q2d(audioStream->time_base);
+	int audio_duration = audioStream->duration*av_q2d(aud
+		ioStream->time_base);
 	int video_duration = videoStream->duration*av_q2d(videoStream->time_base);
 
 	cout << "audio 时长:" << audio_duration << ">>>video 时长:" << video_duration << endl;

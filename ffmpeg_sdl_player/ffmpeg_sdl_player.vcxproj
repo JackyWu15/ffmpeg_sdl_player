@@ -146,7 +146,7 @@
     <ClCompile Include="AVVideo.cpp" />
     <ClCompile Include="AVVideoDisplay.cpp" />
     <ClCompile Include="ffmpeg_player_main.cpp" />
-    <ClCompile Include="ffmpeg_sdl.cpp" />
+    <ClCompile Include="ffmpeg_demo.cpp" />
     <ClCompile Include="MediaPlayer.cpp" />
   </ItemGroup>
   <ItemGroup>
