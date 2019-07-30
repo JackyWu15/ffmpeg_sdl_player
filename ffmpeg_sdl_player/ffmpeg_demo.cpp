@@ -496,8 +496,8 @@ int sdl_player(const char *file_input) {
 				SDL_UpdateTexture(texture, NULL, avframeYUV->data[0], avframeYUV->linesize[0]);
 				sdlRect.x = 0;
 				sdlRect.y = 0;
-				sdlRect.w = screenWidth;
-				sdlRect.h = screenHeight;
+				sdlRect.w = screenWidth/2;
+				sdlRect.h = screenHeight/2;
 
 				SDL_RenderClear(renderer);
 				//将Texture加载到Renderer中

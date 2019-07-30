@@ -27,6 +27,9 @@ public:
 	SDL_Window *window;
 	SDL_Texture *texture;
 	SDL_Renderer *renderer;
+	SDL_Rect sdlRect;
+
+
 	int screen_w;
 	int screen_h;
 	int play_state;

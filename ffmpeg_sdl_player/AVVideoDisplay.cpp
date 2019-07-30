@@ -80,7 +80,7 @@ void sdl_refresh(void *user_data) {
 			SDL_UpdateTexture(video->texture, NULL, video->displayFrame->data[0], video->displayFrame->linesize[0]);
 			SDL_RenderClear(video->renderer);
 
-			SDL_RenderCopy(video->renderer, video->texture, NULL, NULL);
+			SDL_RenderCopy(video->renderer, video->texture, NULL, &video->sdlRect);
 			SDL_RenderPresent(video->renderer);
 
 			sws_freeContext(sws_ctx);

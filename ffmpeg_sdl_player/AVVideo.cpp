@@ -38,12 +38,12 @@ void AVVideo::video_play(MediaPlayer *mediaPlayer) {
 	//´°¿Ú
 	window = SDL_CreateWindow("FFmpeg Decode", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
 		screen_w, screen_h, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+
 	//ÊÓÍ¼
-	SDL_Rect sdlRect;
 	sdlRect.x = 0;
 	sdlRect.y = 0;
-	sdlRect.w = screen_w;
-	sdlRect.h = screen_h;
+	sdlRect.w = screen_w;//screen_w/2
+	sdlRect.h = screen_h;//screen_h/2
 
 	//äÖÈ¾Æ÷
 	renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
